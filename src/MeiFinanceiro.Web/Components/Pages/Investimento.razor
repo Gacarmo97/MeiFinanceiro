@@ -1,0 +1,105 @@
+@page "/investimento"
+@inject EstabelecimentoAtualService EstabelecimentoAtual
+
+<PageTitle>Retorno do Investimento</PageTitle>
+
+<h1>Retorno do Investimento</h1>
+<p class="text-muted">Quanto tempo leva para recuperar o que você investiu para abrir o negócio.</p>
+
+@if (EstabelecimentoAtual.EstabelecimentoId is null)
+{
+    <div class="alert alert-warning">Selecione (ou cadastre) um estabelecimento no topo da página antes de calcular.</div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">1. Investimento inicial</h5>
+            @foreach (var linha in _investimentos)
+            {
+                <div class="row g-2 mb-2 align-items-center">
+                    <div class="col"><input class="form-control" placeholder="Descrição" @bind="linha.Descricao" /></div>
+                    <div class="col-3"><input type="number" class="form-control" placeholder="R$" @bind="linha.Valor" /></div>
+                    <div class="col-auto"><button class="btn btn-outline-danger btn-sm" @onclick="() => _investimentos.Remove(linha)">×</button></div>
+                </div>
+            }
+            <button class="btn btn-sm btn-outline-success" @onclick="() => _investimentos.Add(new())">+ Adicionar item</button>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">2. Retorno esperado</h5>
+            <label class="form-label">Lucro líquido mensal esperado (R$)</label>
+            <input type="number" class="form-control" style="max-width: 250px" @bind="_lucroMensal" />
+            <div class="form-text">Use o "Lucro esperado" da tela de Orçamento de Gastos, ou sua própria estimativa.</div>
+        </div>
+    </div>
+
+    <button class="btn btn-primary btn-lg w-100 mb-4" @onclick="Calcular">Calcular retorno do investimento</button>
+
+    @if (_resultado is not null)
+    {
+        @if (!_resultado.Sucesso)
+        {
+            <div class="alert alert-danger">@_resultado.MensagemErro</div>
+        }
+        else
+        {
+            @if (_resultado.MensagemAlerta is not null)
+            {
+                <div class="alert alert-warning">@_resultado.MensagemAlerta</div>
+            }
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="card text-bg-success">
+                        <div class="card-body">
+                            <div class="text-uppercase small">Tempo para recuperar o investimento</div>
+                            <div class="fs-2 fw-bold">@_resultado.PaybackMeses.ToString("N1") meses</div>
+                            <div class="small">@(_resultado.PaybackAnos > 0 ? $"≈ {_resultado.PaybackAnos} ano(s) e {_resultado.PaybackRestoMeses} mês(es)" : "menos de 1 ano")</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Investimento total</div>
+                        <div class="fs-5 fw-bold">@_resultado.InvestimentoTotal.ToString("C")</div>
+                    </div></div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">ROI ao ano</div>
+                        <div class="fs-5 fw-bold">@_resultado.RoiAnualPercentual.ToString("N1")%</div>
+                        <div class="small text-muted">@_resultado.RoiMensalPercentual.ToString("N1")% ao mês</div>
+                    </div></div>
+                </div>
+            </div>
+        }
+    }
+}
+
+@code {
+    private List<LinhaValor> _investimentos = new()
+    {
+        new("Reforma / obra"), new("Equipamentos"), new("Móveis e utensílios"), new("Estoque inicial"), new("Abertura de CNPJ / alvarás")
+    };
+    private decimal _lucroMensal;
+    private InvestimentoResultado? _resultado;
+
+    private void Calcular()
+    {
+        var entrada = new InvestimentoEntrada(
+            _investimentos.Select(l => new ItemValor(l.Descricao, l.Valor)).ToList(),
+            _lucroMensal);
+
+        _resultado = CalculadoraInvestimento.Calcular(entrada);
+    }
+
+    private class LinhaValor
+    {
+        public LinhaValor() { }
+        public LinhaValor(string descricao) => Descricao = descricao;
+        public string Descricao { get; set; } = string.Empty;
+        public decimal Valor { get; set; }
+    }
+}

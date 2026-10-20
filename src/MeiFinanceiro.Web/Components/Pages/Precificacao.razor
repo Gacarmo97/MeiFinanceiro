@@ -1,0 +1,139 @@
+@page "/precificacao"
+@inject EstabelecimentoAtualService EstabelecimentoAtual
+
+<PageTitle>Preço de Venda</PageTitle>
+
+<h1>Formação de Preço de Venda</h1>
+<p class="text-muted">Some o custo dos insumos (já corrigido pela % de perda/quebra), informe a margem de lucro desejada e descubra o preço de venda.</p>
+
+@if (EstabelecimentoAtual.EstabelecimentoId is null)
+{
+    <div class="alert alert-warning">Selecione (ou cadastre) um estabelecimento no topo da página antes de calcular.</div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">1. Custo dos insumos do produto</h5>
+            <p class="text-muted small">Informe também a % de quebra/perda de cada insumo (ex: peso que a carne perde ao assar).</p>
+            <div class="row g-2 mb-1 text-muted small">
+                <div class="col">Insumo</div>
+                <div class="col-2">Custo bruto</div>
+                <div class="col-2">Perda %</div>
+            </div>
+            @foreach (var linha in _insumos)
+            {
+                <div class="row g-2 mb-2 align-items-center">
+                    <div class="col"><input class="form-control" placeholder="Descrição" @bind="linha.Descricao" /></div>
+                    <div class="col-2"><input type="number" class="form-control" placeholder="R$" @bind="linha.CustoBruto" /></div>
+                    <div class="col-2"><input type="number" class="form-control" placeholder="%" @bind="linha.PerdaPercentual" /></div>
+                    <div class="col-auto"><button class="btn btn-outline-danger btn-sm" @onclick="() => _insumos.Remove(linha)">×</button></div>
+                </div>
+            }
+            <button class="btn btn-sm btn-outline-success" @onclick="() => _insumos.Add(new())">+ Adicionar insumo</button>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">2. Custos variáveis sobre a venda (%)</h5>
+            <p class="text-muted small">Taxa de cartão/maquininha, comissão de app de delivery etc.</p>
+            @foreach (var linha in _custosVariaveis)
+            {
+                <div class="row g-2 mb-2 align-items-center">
+                    <div class="col"><input class="form-control" placeholder="Descrição" @bind="linha.Descricao" /></div>
+                    <div class="col-3"><input type="number" class="form-control" placeholder="%" @bind="linha.Percentual" /></div>
+                    <div class="col-auto"><button class="btn btn-outline-danger btn-sm" @onclick="() => _custosVariaveis.Remove(linha)">×</button></div>
+                </div>
+            }
+            <button class="btn btn-sm btn-outline-success" @onclick="() => _custosVariaveis.Add(new())">+ Adicionar custo variável (%)</button>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">3. Margem de lucro desejada</h5>
+            <label class="form-label">Lucro desejado sobre o preço de venda (%)</label>
+            <input type="number" class="form-control" style="max-width: 200px" @bind="_margemLucro" />
+        </div>
+    </div>
+
+    <button class="btn btn-primary btn-lg w-100 mb-4" @onclick="Calcular">Calcular preço de venda</button>
+
+    @if (_resultado is not null)
+    {
+        @if (!_resultado.Sucesso)
+        {
+            <div class="alert alert-danger">@_resultado.MensagemErro</div>
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="card text-bg-success">
+                        <div class="card-body">
+                            <div class="text-uppercase small">Preço de venda sugerido</div>
+                            <div class="fs-2 fw-bold">@_resultado.PrecoVenda.ToString("C")</div>
+                            <div class="small">arredondando para venda: @_resultado.PrecoArredondado.ToString("C")</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Custo dos insumos</div>
+                        <div class="fs-5 fw-bold">@_resultado.CustoRealTotal.ToString("C")</div>
+                    </div></div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Custos variáveis embutidos</div>
+                        <div class="fs-5 fw-bold">@_resultado.ValorVariaveis.ToString("C")</div>
+                    </div></div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Lucro por venda</div>
+                        <div class="fs-5 fw-bold">@_resultado.ValorLucro.ToString("C")</div>
+                    </div></div>
+                </div>
+            </div>
+        }
+    }
+}
+
+@code {
+    private List<LinhaInsumo> _insumos = new()
+    {
+        new("Carne", 20m), new("Tempero / acompanhamentos"), new("Carvão / lenha"), new("Embalagem")
+    };
+    private List<LinhaPercentual> _custosVariaveis = new() { new("Taxa de cartão / maquininha"), new("Comissão de app de delivery") };
+    private decimal _margemLucro;
+    private PrecificacaoResultado? _resultado;
+
+    private void Calcular()
+    {
+        var entrada = new PrecificacaoEntrada(
+            _insumos.Select(l => new ItemInsumo(l.Descricao, l.CustoBruto, l.PerdaPercentual)).ToList(),
+            _custosVariaveis.Select(l => new ItemPercentual(l.Descricao, l.Percentual)).ToList(),
+            _margemLucro);
+
+        _resultado = CalculadoraPrecificacao.Calcular(entrada);
+    }
+
+    private class LinhaInsumo
+    {
+        public LinhaInsumo() { }
+        public LinhaInsumo(string descricao, decimal perda = 0) { Descricao = descricao; PerdaPercentual = perda; }
+        public string Descricao { get; set; } = string.Empty;
+        public decimal CustoBruto { get; set; }
+        public decimal PerdaPercentual { get; set; }
+    }
+
+    private class LinhaPercentual
+    {
+        public LinhaPercentual() { }
+        public LinhaPercentual(string descricao) => Descricao = descricao;
+        public string Descricao { get; set; } = string.Empty;
+        public decimal Percentual { get; set; }
+    }
+}

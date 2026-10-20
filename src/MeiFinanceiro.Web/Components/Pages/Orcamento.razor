@@ -1,0 +1,122 @@
+@page "/orcamento"
+@inject EstabelecimentoAppService EstabelecimentoAppService
+@inject EstabelecimentoAtualService EstabelecimentoAtual
+
+<PageTitle>Orçamento de Gastos</PageTitle>
+
+<h1>Orçamento Máximo de Gastos</h1>
+<p class="text-muted">A partir do faturamento esperado e do lucro que você quer ter, descubra o teto de gastos do seu MEI.</p>
+
+@if (EstabelecimentoAtual.EstabelecimentoId is null)
+{
+    <div class="alert alert-warning">Selecione (ou cadastre) um estabelecimento no topo da página antes de calcular.</div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">1. Faturamento e lucro desejado</h5>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Faturamento esperado no mês (R$)</label>
+                    <input type="number" class="form-control" @bind="_faturamento" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Lucro desejado sobre o faturamento (%)</label>
+                    <input type="number" class="form-control" @bind="_margemLucro" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">2. Custos variáveis estimados (% sobre o faturamento)</h5>
+            @foreach (var linha in _custosVariaveis)
+            {
+                <div class="row g-2 mb-2 align-items-center">
+                    <div class="col"><input class="form-control" placeholder="Descrição" @bind="linha.Descricao" /></div>
+                    <div class="col-3"><input type="number" class="form-control" placeholder="%" @bind="linha.Percentual" /></div>
+                    <div class="col-auto"><button class="btn btn-outline-danger btn-sm" @onclick="() => _custosVariaveis.Remove(linha)">×</button></div>
+                </div>
+            }
+            <button class="btn btn-sm btn-outline-success" @onclick="() => _custosVariaveis.Add(new())">+ Adicionar custo variável (%)</button>
+        </div>
+    </div>
+
+    <button class="btn btn-primary btn-lg w-100 mb-4" @onclick="Calcular">Calcular orçamento máximo</button>
+
+    @if (_resultado is not null)
+    {
+        @if (!_resultado.Sucesso)
+        {
+            <div class="alert alert-danger">@_resultado.MensagemErro</div>
+        }
+        else
+        {
+            @if (_resultado.MensagemAlerta is not null)
+            {
+                <div class="alert alert-warning">@_resultado.MensagemAlerta</div>
+            }
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="card text-bg-success">
+                        <div class="card-body">
+                            <div class="text-uppercase small">Teto disponível para custos fixos</div>
+                            <div class="fs-2 fw-bold">@Math.Max(_resultado.TetoCustosFixos, 0).ToString("C")</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Gasto máximo total permitido</div>
+                        <div class="fs-5 fw-bold">@_resultado.GastoMaximoTotal.ToString("C")</div>
+                    </div></div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Lucro esperado</div>
+                        <div class="fs-5 fw-bold">@_resultado.LucroEsperado.ToString("C")</div>
+                    </div></div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">DAS-MEI mensal</div>
+                        <div class="fs-5 fw-bold">@_resultado.DasTotal.ToString("C")</div>
+                    </div></div>
+                </div>
+            </div>
+        }
+    }
+}
+
+@code {
+    private decimal _faturamento;
+    private decimal _margemLucro;
+    private List<LinhaPercentual> _custosVariaveis = new() { new("Taxa de cartão / maquininha", 3m), new("Comissão de app de delivery") };
+    private OrcamentoResultado? _resultado;
+
+    private async Task Calcular()
+    {
+        if (EstabelecimentoAtual.EstabelecimentoId is null) return;
+        var estabelecimento = await EstabelecimentoAppService.ObterAsync(EstabelecimentoAtual.EstabelecimentoId.Value);
+        if (estabelecimento is null) return;
+
+        var entrada = new OrcamentoEntrada(
+            _faturamento,
+            _margemLucro,
+            _custosVariaveis.Select(l => new ItemPercentual(l.Descricao, l.Percentual)).ToList(),
+            estabelecimento.Atividade,
+            estabelecimento.SalarioMinimoReferencia);
+
+        _resultado = CalculadoraOrcamento.Calcular(entrada);
+    }
+
+    private class LinhaPercentual
+    {
+        public LinhaPercentual() { }
+        public LinhaPercentual(string descricao, decimal percentual = 0) { Descricao = descricao; Percentual = percentual; }
+        public string Descricao { get; set; } = string.Empty;
+        public decimal Percentual { get; set; }
+    }
+}

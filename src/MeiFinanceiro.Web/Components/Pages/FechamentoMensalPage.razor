@@ -1,0 +1,197 @@
+@page "/fechamento-mensal"
+@inject EstabelecimentoAppService EstabelecimentoAppService
+@inject FechamentoMensalAppService FechamentoMensalAppService
+@inject EstabelecimentoAtualService EstabelecimentoAtual
+@implements IDisposable
+
+<PageTitle>Fechamento Mensal</PageTitle>
+
+<h1>Fechamento Mensal</h1>
+<p class="text-muted">Lance os valores reais do mês — é a mesma conta da DRE Simplificada, mas fica guardada no histórico de @(_estabelecimento?.Nome ?? "—").</p>
+
+@if (EstabelecimentoAtual.EstabelecimentoId is null)
+{
+    <div class="alert alert-warning">Selecione (ou cadastre) um estabelecimento no topo da página.</div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">@(MesJaLancado ? $"Atualizando {MesNome(_mes)}/{_ano}" : "Lançar mês")</h5>
+            <div class="row g-3">
+                <div class="col-md-2">
+                    <label class="form-label">Ano</label>
+                    <input type="number" class="form-control" @bind="_ano" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">Mês</label>
+                    <select class="form-select" @bind="_mes">
+                        @for (var m = 1; m <= 12; m++)
+                        {
+                            <option value="@m">@MesNome(m)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Faturamento (R$)</label>
+                    <input type="number" class="form-control" @bind="_faturamento" />
+                </div>
+                <div class="col-md-2">
+                    <label class="form-label">CMV (R$)</label>
+                    <input type="number" class="form-control" @bind="_cmv" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Custos fixos (R$)</label>
+                    <input type="number" class="form-control" @bind="_custosFixos" />
+                </div>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-primary" @onclick="SalvarAsync">@(MesJaLancado ? "Atualizar mês" : "Lançar mês")</button>
+                <button class="btn btn-outline-secondary ms-2" @onclick="NovoFormulario">Novo</button>
+            </div>
+            @if (_erro is not null)
+            {
+                <div class="alert alert-danger mt-3">@_erro</div>
+            }
+        </div>
+    </div>
+
+    @if (_fechamentos.Count == 0)
+    {
+        <p class="text-muted">Nenhum mês lançado ainda.</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped align-middle">
+                <thead>
+                    <tr>
+                        <th>Mês</th><th class="text-end">Faturamento</th><th class="text-end">CMV</th>
+                        <th class="text-end">Custos fixos</th><th class="text-end">DAS</th>
+                        <th class="text-end">Lucro líquido</th><th class="text-end">Margem</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var fechamento in _fechamentos.OrderByDescending(f => f.Ano).ThenByDescending(f => f.Mes))
+                    {
+                        <tr>
+                            <td>@MesNome(fechamento.Mes)/@fechamento.Ano</td>
+                            <td class="text-end">@fechamento.Faturamento.ToString("C")</td>
+                            <td class="text-end">@fechamento.Cmv.ToString("C")</td>
+                            <td class="text-end">@fechamento.CustosFixos.ToString("C")</td>
+                            <td class="text-end">@fechamento.DasCalculado.ToString("C")</td>
+                            <td class="text-end fw-bold @(fechamento.LucroLiquido < 0 ? "text-danger" : "text-success")">@fechamento.LucroLiquido.ToString("C")</td>
+                            <td class="text-end">@fechamento.MargemLiquida.ToString("N1")%</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-outline-primary" @onclick="() => Editar(fechamento)">Editar</button>
+                                @if (_idParaConfirmarExclusao == fechamento.Id)
+                                {
+                                    <button class="btn btn-sm btn-danger ms-1" @onclick="() => ExcluirAsync(fechamento.Id)">Confirmar</button>
+                                }
+                                else
+                                {
+                                    <button class="btn btn-sm btn-outline-danger ms-1" @onclick="() => _idParaConfirmarExclusao = fechamento.Id">Excluir</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+}
+
+@code {
+    private Estabelecimento? _estabelecimento;
+    private List<FechamentoMensal> _fechamentos = new();
+    private int _ano = DateTime.Today.Year;
+    private int _mes = DateTime.Today.Month;
+    private decimal _faturamento;
+    private decimal _cmv;
+    private decimal _custosFixos;
+    private string? _erro;
+    private int? _idParaConfirmarExclusao;
+
+    private bool MesJaLancado => _fechamentos.Any(f => f.Ano == _ano && f.Mes == _mes);
+
+    protected override async Task OnInitializedAsync()
+    {
+        EstabelecimentoAtual.Mudou += OnEstabelecimentoMudouAsync;
+        await CarregarAsync();
+    }
+
+    private async void OnEstabelecimentoMudouAsync()
+    {
+        await CarregarAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CarregarAsync()
+    {
+        if (EstabelecimentoAtual.EstabelecimentoId is null)
+        {
+            _estabelecimento = null;
+            _fechamentos = new();
+            return;
+        }
+
+        _estabelecimento = await EstabelecimentoAppService.ObterAsync(EstabelecimentoAtual.EstabelecimentoId.Value);
+        _fechamentos = await FechamentoMensalAppService.ListarAsync(EstabelecimentoAtual.EstabelecimentoId.Value);
+    }
+
+    private async Task SalvarAsync()
+    {
+        if (EstabelecimentoAtual.EstabelecimentoId is null) return;
+        _erro = null;
+        try
+        {
+            await FechamentoMensalAppService.LancarAsync(
+                EstabelecimentoAtual.EstabelecimentoId.Value, _ano, _mes, _faturamento, _cmv, _custosFixos);
+            await CarregarAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            _erro = ex.Message;
+        }
+    }
+
+    private void Editar(FechamentoMensal fechamento)
+    {
+        _ano = fechamento.Ano;
+        _mes = fechamento.Mes;
+        _faturamento = fechamento.Faturamento;
+        _cmv = fechamento.Cmv;
+        _custosFixos = fechamento.CustosFixos;
+        _erro = null;
+    }
+
+    private void NovoFormulario()
+    {
+        _ano = DateTime.Today.Year;
+        _mes = DateTime.Today.Month;
+        _faturamento = 0;
+        _cmv = 0;
+        _custosFixos = 0;
+        _erro = null;
+    }
+
+    private async Task ExcluirAsync(int id)
+    {
+        await FechamentoMensalAppService.RemoverAsync(id);
+        _idParaConfirmarExclusao = null;
+        await CarregarAsync();
+    }
+
+    private static string MesNome(int mes) => mes switch
+    {
+        1 => "Janeiro", 2 => "Fevereiro", 3 => "Março", 4 => "Abril",
+        5 => "Maio", 6 => "Junho", 7 => "Julho", 8 => "Agosto",
+        9 => "Setembro", 10 => "Outubro", 11 => "Novembro", 12 => "Dezembro",
+        _ => mes.ToString()
+    };
+
+    public void Dispose()
+    {
+        EstabelecimentoAtual.Mudou -= OnEstabelecimentoMudouAsync;
+    }
+}

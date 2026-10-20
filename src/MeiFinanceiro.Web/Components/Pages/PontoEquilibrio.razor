@@ -1,0 +1,154 @@
+@page "/ponto-equilibrio"
+@inject EstabelecimentoAppService EstabelecimentoAppService
+@inject EstabelecimentoAtualService EstabelecimentoAtual
+
+<PageTitle>Ponto de Equilíbrio</PageTitle>
+
+<h1>Calculadora de Ponto de Equilíbrio</h1>
+<p class="text-muted">Descubra quanto seu MEI precisa faturar por mês para cobrir todos os custos, incluindo o DAS-MEI.</p>
+
+@if (EstabelecimentoAtual.EstabelecimentoId is null)
+{
+    <div class="alert alert-warning">Selecione (ou cadastre) um estabelecimento no topo da página antes de calcular.</div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">1. Custos fixos mensais</h5>
+            <p class="text-muted small">Tudo o que você paga todo mês, venda ou não. O DAS-MEI é somado automaticamente.</p>
+            @foreach (var linha in _custosFixos)
+            {
+                <div class="row g-2 mb-2 align-items-center">
+                    <div class="col"><input class="form-control" placeholder="Descrição" @bind="linha.Descricao" /></div>
+                    <div class="col-3"><input type="number" class="form-control" placeholder="R$" @bind="linha.Valor" /></div>
+                    <div class="col-auto"><button class="btn btn-outline-danger btn-sm" @onclick="() => _custosFixos.Remove(linha)">×</button></div>
+                </div>
+            }
+            <button class="btn btn-sm btn-outline-success" @onclick="() => _custosFixos.Add(new())">+ Adicionar custo fixo</button>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">2. Preço de venda e custos variáveis</h5>
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Preço médio de venda / ticket médio (R$)</label>
+                    <input type="number" class="form-control" @bind="_precoVenda" />
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Custo de insumo por venda (R$)</label>
+                    <input type="number" class="form-control" @bind="_custoInsumo" />
+                </div>
+            </div>
+            <p class="text-muted small mt-3">Custos variáveis (% sobre o preço de venda): comissões, taxa de cartão/maquininha, embalagem, frete etc.</p>
+            @foreach (var linha in _custosVariaveis)
+            {
+                <div class="row g-2 mb-2 align-items-center">
+                    <div class="col"><input class="form-control" placeholder="Descrição" @bind="linha.Descricao" /></div>
+                    <div class="col-3"><input type="number" class="form-control" placeholder="%" @bind="linha.Percentual" /></div>
+                    <div class="col-auto"><button class="btn btn-outline-danger btn-sm" @onclick="() => _custosVariaveis.Remove(linha)">×</button></div>
+                </div>
+            }
+            <button class="btn btn-sm btn-outline-success" @onclick="() => _custosVariaveis.Add(new())">+ Adicionar custo variável (%)</button>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">3. Ritmo de vendas</h5>
+            <label class="form-label">Dias de venda por mês</label>
+            <input type="number" class="form-control" style="max-width: 150px" @bind="_diasVenda" />
+        </div>
+    </div>
+
+    <button class="btn btn-primary btn-lg w-100 mb-4" @onclick="Calcular">Calcular ponto de equilíbrio</button>
+
+    @if (_resultado is not null)
+    {
+        @if (!_resultado.Sucesso)
+        {
+            <div class="alert alert-danger">@_resultado.MensagemErro</div>
+        }
+        else
+        {
+            @if (_resultado.MensagemAlerta is not null)
+            {
+                <div class="alert alert-warning">@_resultado.MensagemAlerta</div>
+            }
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="card text-bg-success">
+                        <div class="card-body">
+                            <div class="text-uppercase small">Você precisa faturar por mês</div>
+                            <div class="fs-2 fw-bold">@_resultado.PontoEquilibrioReais.ToString("C")</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Vendas necessárias / mês</div>
+                        <div class="fs-4 fw-bold">@_resultado.PontoEquilibrioUnidades.ToString("N1")</div>
+                    </div></div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Meta por dia (@_diasVenda dias)</div>
+                        <div class="fs-4 fw-bold">@_resultado.PontoEquilibrioDiarioReais.ToString("C")</div>
+                    </div></div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">DAS-MEI mensal</div>
+                        <div class="fs-4 fw-bold">@_resultado.DasTotal.ToString("C")</div>
+                    </div></div>
+                </div>
+            </div>
+        }
+    }
+}
+
+@code {
+    private List<LinhaValor> _custosFixos = new() { new("Aluguel"), new("Funcionário(s) + encargos"), new("Contador"), new("Água / luz / internet") };
+    private List<LinhaPercentual> _custosVariaveis = new() { new("Taxa de cartão / maquininha"), new("Comissão sobre venda") };
+    private decimal _precoVenda;
+    private decimal _custoInsumo;
+    private int _diasVenda = 26;
+    private PontoEquilibrioResultado? _resultado;
+    private Estabelecimento? _estabelecimento;
+
+    private async Task Calcular()
+    {
+        if (EstabelecimentoAtual.EstabelecimentoId is null) return;
+        _estabelecimento = await EstabelecimentoAppService.ObterAsync(EstabelecimentoAtual.EstabelecimentoId.Value);
+        if (_estabelecimento is null) return;
+
+        var entrada = new PontoEquilibrioEntrada(
+            _estabelecimento.Atividade,
+            _estabelecimento.SalarioMinimoReferencia,
+            _custosFixos.Select(l => new ItemValor(l.Descricao, l.Valor)).ToList(),
+            _precoVenda,
+            _custoInsumo,
+            _custosVariaveis.Select(l => new ItemPercentual(l.Descricao, l.Percentual)).ToList(),
+            _diasVenda);
+
+        _resultado = CalculadoraPontoEquilibrio.Calcular(entrada);
+    }
+
+    private class LinhaValor
+    {
+        public LinhaValor() { }
+        public LinhaValor(string descricao) => Descricao = descricao;
+        public string Descricao { get; set; } = string.Empty;
+        public decimal Valor { get; set; }
+    }
+
+    private class LinhaPercentual
+    {
+        public LinhaPercentual() { }
+        public LinhaPercentual(string descricao) => Descricao = descricao;
+        public string Descricao { get; set; } = string.Empty;
+        public decimal Percentual { get; set; }
+    }
+}

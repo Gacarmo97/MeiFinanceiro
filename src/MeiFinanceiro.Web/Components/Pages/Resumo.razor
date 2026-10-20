@@ -1,0 +1,127 @@
+@page "/resumo"
+@inject ResumoAppService ResumoAppService
+@inject EstabelecimentoAtualService EstabelecimentoAtual
+@implements IDisposable
+
+<PageTitle>Resumo</PageTitle>
+
+<h1>Resumo — Como estão as contas</h1>
+<p class="text-muted">Histórico dos fechamentos mensais reais de @(_resumo?.NomeEstabelecimento ?? "—").</p>
+
+@if (EstabelecimentoAtual.EstabelecimentoId is null)
+{
+    <div class="alert alert-warning">Selecione (ou cadastre) um estabelecimento no topo da página.</div>
+}
+else if (_resumo is null || _resumo.Historico.Count == 0)
+{
+    <div class="alert alert-info">
+        Nenhum fechamento mensal lançado ainda para este estabelecimento.
+        <a href="fechamento-mensal">Lance o primeiro mês</a>.
+    </div>
+}
+else
+{
+    var ultimo = _resumo.UltimoMes!;
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card @(ultimo.LucroLiquido >= 0 ? "text-bg-success" : "text-bg-danger")">
+                <div class="card-body">
+                    <div class="text-uppercase small">Lucro líquido — @MesNome(ultimo.Mes)/@ultimo.Ano</div>
+                    <div class="fs-2 fw-bold">@ultimo.LucroLiquido.ToString("C")</div>
+                    <div class="small">@ultimo.MargemLiquida.ToString("N1")% de margem sobre @ultimo.Faturamento.ToString("C")</div>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="row g-3">
+                <div class="col-6">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">CMV do último mês</div>
+                        <div class="fs-5 fw-bold">@ultimo.CmvPercentual.ToString("N1")%</div>
+                    </div></div>
+                </div>
+                <div class="col-6">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Custos fixos + DAS</div>
+                        <div class="fs-5 fw-bold">@((ultimo.CustosFixos + ultimo.DasCalculado).ToString("C"))</div>
+                    </div></div>
+                </div>
+                <div class="col-6">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Média lucro líq. (3 meses)</div>
+                        <div class="fs-6 fw-bold">@(_resumo.MediaLucroLiquidoUltimos3Meses?.ToString("C") ?? "—")</div>
+                    </div></div>
+                </div>
+                <div class="col-6">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Média lucro líq. (6 meses)</div>
+                        <div class="fs-6 fw-bold">@(_resumo.MediaLucroLiquidoUltimos6Meses?.ToString("C") ?? "—")</div>
+                    </div></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <h5>Histórico de fechamentos</h5>
+    <div class="table-responsive">
+        <table class="table table-striped align-middle">
+            <thead>
+                <tr>
+                    <th>Mês</th><th class="text-end">Faturamento</th><th class="text-end">CMV %</th>
+                    <th class="text-end">Custos fixos</th><th class="text-end">DAS</th>
+                    <th class="text-end">Lucro líquido</th><th class="text-end">Margem</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var mes in _resumo.Historico.OrderByDescending(m => m.Ano).ThenByDescending(m => m.Mes))
+                {
+                    <tr>
+                        <td>@MesNome(mes.Mes)/@mes.Ano</td>
+                        <td class="text-end">@mes.Faturamento.ToString("C")</td>
+                        <td class="text-end">@mes.CmvPercentual.ToString("N1")%</td>
+                        <td class="text-end">@mes.CustosFixos.ToString("C")</td>
+                        <td class="text-end">@mes.DasCalculado.ToString("C")</td>
+                        <td class="text-end fw-bold @(mes.LucroLiquido < 0 ? "text-danger" : "text-success")">@mes.LucroLiquido.ToString("C")</td>
+                        <td class="text-end">@mes.MargemLiquida.ToString("N1")%</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private ResumoEstabelecimento? _resumo;
+
+    protected override async Task OnInitializedAsync()
+    {
+        EstabelecimentoAtual.Mudou += OnEstabelecimentoMudouAsync;
+        await CarregarAsync();
+    }
+
+    private async void OnEstabelecimentoMudouAsync()
+    {
+        await CarregarAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task CarregarAsync()
+    {
+        _resumo = EstabelecimentoAtual.EstabelecimentoId is null
+            ? null
+            : await ResumoAppService.ObterResumoAsync(EstabelecimentoAtual.EstabelecimentoId.Value);
+    }
+
+    private static string MesNome(int mes) => mes switch
+    {
+        1 => "Janeiro", 2 => "Fevereiro", 3 => "Março", 4 => "Abril",
+        5 => "Maio", 6 => "Junho", 7 => "Julho", 8 => "Agosto",
+        9 => "Setembro", 10 => "Outubro", 11 => "Novembro", 12 => "Dezembro",
+        _ => mes.ToString()
+    };
+
+    public void Dispose()
+    {
+        EstabelecimentoAtual.Mudou -= OnEstabelecimentoMudouAsync;
+    }
+}

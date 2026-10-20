@@ -1,0 +1,100 @@
+@page "/cmv"
+@inject EstabelecimentoAtualService EstabelecimentoAtual
+
+<PageTitle>CMV Mensal</PageTitle>
+
+<h1>CMV Mensal (Custo da Mercadoria Vendida)</h1>
+<p class="text-muted">Quanto do seu faturamento do mês virou custo de insumo — o indicador número 1 de um restaurante.</p>
+
+@if (EstabelecimentoAtual.EstabelecimentoId is null)
+{
+    <div class="alert alert-warning">Selecione (ou cadastre) um estabelecimento no topo da página antes de calcular.</div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">1. Estoque de insumos no mês</h5>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Estoque inicial (R$)</label>
+                    <input type="number" class="form-control" @bind="_estoqueInicial" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Compras no mês (R$)</label>
+                    <input type="number" class="form-control" @bind="_compras" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Estoque final (R$)</label>
+                    <input type="number" class="form-control" @bind="_estoqueFinal" />
+                </div>
+            </div>
+            <div class="form-text">Custo de insumo consumido = Estoque inicial + Compras − Estoque final.</div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">2. Faturamento do mês</h5>
+            <label class="form-label">Faturamento do mês (R$)</label>
+            <input type="number" class="form-control" style="max-width: 250px" @bind="_faturamento" />
+        </div>
+    </div>
+
+    <button class="btn btn-primary btn-lg w-100 mb-4" @onclick="Calcular">Calcular CMV</button>
+
+    @if (_resultado is not null)
+    {
+        @if (!_resultado.Sucesso)
+        {
+            <div class="alert alert-danger">@_resultado.MensagemErro</div>
+        }
+        else
+        {
+            <div class="alert @FaixaCss(_resultado.Faixa)">@_resultado.MensagemFaixa</div>
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="card text-bg-success">
+                        <div class="card-body">
+                            <div class="text-uppercase small">CMV do mês</div>
+                            <div class="fs-2 fw-bold">@_resultado.CmvPercentual.ToString("N1")%</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Custo de insumo consumido</div>
+                        <div class="fs-5 fw-bold">@_resultado.CmvReais.ToString("C")</div>
+                    </div></div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Margem bruta restante</div>
+                        <div class="fs-5 fw-bold">@_resultado.MargemBrutaRestante.ToString("C")</div>
+                    </div></div>
+                </div>
+            </div>
+        }
+    }
+}
+
+@code {
+    private decimal _estoqueInicial;
+    private decimal _compras;
+    private decimal _estoqueFinal;
+    private decimal _faturamento;
+    private CmvResultado? _resultado;
+
+    private void Calcular()
+    {
+        var entrada = new CmvEntrada(_estoqueInicial, _compras, _estoqueFinal, _faturamento);
+        _resultado = CalculadoraCmv.Calcular(entrada);
+    }
+
+    private static string FaixaCss(FaixaCmv faixa) => faixa switch
+    {
+        FaixaCmv.Saudavel => "alert-success",
+        FaixaCmv.Atencao => "alert-warning",
+        _ => "alert-danger"
+    };
+}

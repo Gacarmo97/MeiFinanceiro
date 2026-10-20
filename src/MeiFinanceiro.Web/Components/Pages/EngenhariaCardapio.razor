@@ -1,0 +1,139 @@
+@page "/engenharia-cardapio"
+@inject EstabelecimentoAtualService EstabelecimentoAtual
+
+<PageTitle>Engenharia de Cardápio</PageTitle>
+
+<h1>Engenharia de Cardápio</h1>
+<p class="text-muted">Classifique seus pratos por popularidade x lucratividade para saber o que destacar, ajustar ou tirar do cardápio.</p>
+
+@if (EstabelecimentoAtual.EstabelecimentoId is null)
+{
+    <div class="alert alert-warning">Selecione (ou cadastre) um estabelecimento no topo da página antes de calcular.</div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">Pratos do cardápio (no período analisado)</h5>
+            <p class="text-muted small">Informe a quantidade vendida de cada prato no mesmo período, o preço de venda e o custo do prato.</p>
+            <div class="row g-2 mb-1 text-muted small">
+                <div class="col">Prato</div>
+                <div class="col-2">Qtd. vendida</div>
+                <div class="col-2">Preço (R$)</div>
+                <div class="col-2">Custo (R$)</div>
+            </div>
+            @foreach (var linha in _pratos)
+            {
+                <div class="row g-2 mb-2 align-items-center">
+                    <div class="col"><input class="form-control" placeholder="Nome do prato" @bind="linha.Nome" /></div>
+                    <div class="col-2"><input type="number" class="form-control" @bind="linha.Quantidade" /></div>
+                    <div class="col-2"><input type="number" class="form-control" @bind="linha.Preco" /></div>
+                    <div class="col-2"><input type="number" class="form-control" @bind="linha.Custo" /></div>
+                    <div class="col-auto"><button class="btn btn-outline-danger btn-sm" @onclick="() => _pratos.Remove(linha)">×</button></div>
+                </div>
+            }
+            <button class="btn btn-sm btn-outline-success" @onclick="() => _pratos.Add(new())">+ Adicionar prato</button>
+        </div>
+    </div>
+
+    <button class="btn btn-primary btn-lg w-100 mb-4" @onclick="Calcular">Classificar cardápio</button>
+
+    @if (_resultado is not null)
+    {
+        @if (!_resultado.Sucesso)
+        {
+            <div class="alert alert-danger">@_resultado.MensagemErro</div>
+        }
+        else
+        {
+            <div class="row g-3 mb-3">
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Margem de contribuição média</div>
+                        <div class="fs-5 fw-bold">@_resultado.CmgMedia.ToString("C")</div>
+                    </div></div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Estrelas / Enigmas</div>
+                        <div class="fs-5 fw-bold">@_resultado.Contagem[CategoriaPrato.Estrela] / @_resultado.Contagem[CategoriaPrato.Enigma]</div>
+                    </div></div>
+                </div>
+                <div class="col-md-4">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Cavalos de batalha / Abacaxis</div>
+                        <div class="fs-5 fw-bold">@_resultado.Contagem[CategoriaPrato.CavaloDeBatalha] / @_resultado.Contagem[CategoriaPrato.Abacaxi]</div>
+                    </div></div>
+                </div>
+            </div>
+
+            <div class="table-responsive">
+                <table class="table table-striped align-middle">
+                    <thead>
+                        <tr>
+                            <th>Prato</th><th class="text-end">Qtd.</th><th class="text-end">Preço</th>
+                            <th class="text-end">Custo</th><th class="text-end">Margem</th>
+                            <th class="text-end">Participação</th><th>Classificação</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var item in _resultado.Itens.OrderByDescending(i => i.Quantidade))
+                        {
+                            <tr>
+                                <td>@item.Nome</td>
+                                <td class="text-end">@item.Quantidade</td>
+                                <td class="text-end">@item.Preco.ToString("C")</td>
+                                <td class="text-end">@item.Custo.ToString("C")</td>
+                                <td class="text-end">@item.Margem.ToString("C")</td>
+                                <td class="text-end">@((item.Participacao * 100).ToString("N1"))%</td>
+                                <td><span class="badge @BadgeCss(item.Categoria)">@DescricaoCategoria(item.Categoria)</span></td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        }
+    }
+}
+
+@code {
+    private List<LinhaPrato> _pratos = new()
+    {
+        new("Espetinho de carne"), new("Picanha na brasa"), new("Linguiça acebolada"), new("Refrigerante")
+    };
+    private EngenhariaCardapioResultado? _resultado;
+
+    private void Calcular()
+    {
+        var entrada = new EngenhariaCardapioEntrada(
+            _pratos.Select(l => new PratoEntrada(l.Nome, l.Quantidade, l.Preco, l.Custo)).ToList());
+
+        _resultado = CalculadoraEngenhariaCardapio.Calcular(entrada);
+    }
+
+    private static string BadgeCss(CategoriaPrato categoria) => categoria switch
+    {
+        CategoriaPrato.Estrela => "text-bg-success",
+        CategoriaPrato.CavaloDeBatalha => "text-bg-warning",
+        CategoriaPrato.Enigma => "text-bg-info",
+        _ => "text-bg-danger"
+    };
+
+    private static string DescricaoCategoria(CategoriaPrato categoria) => categoria switch
+    {
+        CategoriaPrato.Estrela => "Estrela",
+        CategoriaPrato.CavaloDeBatalha => "Cavalo de batalha",
+        CategoriaPrato.Enigma => "Enigma",
+        _ => "Abacaxi"
+    };
+
+    private class LinhaPrato
+    {
+        public LinhaPrato() { }
+        public LinhaPrato(string nome) => Nome = nome;
+        public string Nome { get; set; } = string.Empty;
+        public decimal Quantidade { get; set; }
+        public decimal Preco { get; set; }
+        public decimal Custo { get; set; }
+    }
+}

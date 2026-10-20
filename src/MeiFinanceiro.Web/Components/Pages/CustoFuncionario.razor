@@ -1,0 +1,105 @@
+@page "/custo-funcionario"
+@inject EstabelecimentoAppService EstabelecimentoAppService
+@inject EstabelecimentoAtualService EstabelecimentoAtual
+
+<PageTitle>Custo de Funcionário</PageTitle>
+
+<h1>Custo Total de Funcionário (MEI)</h1>
+<p class="text-muted">O salário é só uma parte — veja o custo mensal real de empregar alguém.</p>
+
+@if (EstabelecimentoAtual.EstabelecimentoId is null)
+{
+    <div class="alert alert-warning">Selecione (ou cadastre) um estabelecimento no topo da página antes de calcular.</div>
+}
+else
+{
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">1. Remuneração</h5>
+            <label class="form-label">Salário bruto mensal (R$)</label>
+            <input type="number" class="form-control" style="max-width: 250px" @bind="_salario" />
+            <div class="form-text">O MEI só pode ter <strong>1 empregado</strong>, que deve receber no mínimo 1 salário mínimo ou o piso da categoria.</div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h5 class="card-title">2. Benefícios mensais</h5>
+            <div class="row g-3">
+                <div class="col-md-4">
+                    <label class="form-label">Vale-transporte (custo líquido, R$)</label>
+                    <input type="number" class="form-control" @bind="_valeTransporte" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Vale-refeição / alimentação (R$)</label>
+                    <input type="number" class="form-control" @bind="_valeRefeicao" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label">Outros benefícios (R$)</label>
+                    <input type="number" class="form-control" @bind="_outrosBeneficios" />
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <button class="btn btn-primary btn-lg w-100 mb-4" @onclick="Calcular">Calcular custo total</button>
+
+    @if (_resultado is not null)
+    {
+        @if (!_resultado.Sucesso)
+        {
+            <div class="alert alert-danger">@_resultado.MensagemErro</div>
+        }
+        else
+        {
+            <div class="row g-3">
+                <div class="col-12">
+                    <div class="card text-bg-success">
+                        <div class="card-body">
+                            <div class="text-uppercase small">Custo total mensal do funcionário</div>
+                            <div class="fs-2 fw-bold">@_resultado.CustoTotalMensal.ToString("C")</div>
+                            <div class="small">@_resultado.OverheadPercentual.ToString("N1")% acima do salário bruto</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Encargos (FGTS + INSS + 13º + férias)</div>
+                        <div class="fs-5 fw-bold">@_resultado.Encargos.ToString("C")</div>
+                    </div></div>
+                </div>
+                <div class="col-md-6">
+                    <div class="card"><div class="card-body">
+                        <div class="text-uppercase small text-muted">Benefícios</div>
+                        <div class="fs-5 fw-bold">@_resultado.Beneficios.ToString("C")</div>
+                    </div></div>
+                </div>
+            </div>
+            <p class="text-muted small mt-3">O empregador MEI recolhe INSS patronal reduzido de 3% (em vez dos ~20% do CLT comum), além do FGTS de 8%, para seu único empregado. Não inclui custo eventual de rescisão.</p>
+        }
+    }
+}
+
+@code {
+    private decimal _salario = 1518m;
+    private decimal _valeTransporte;
+    private decimal _valeRefeicao;
+    private decimal _outrosBeneficios;
+    private CustoFuncionarioResultado? _resultado;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (EstabelecimentoAtual.EstabelecimentoId is not null)
+        {
+            var estabelecimento = await EstabelecimentoAppService.ObterAsync(EstabelecimentoAtual.EstabelecimentoId.Value);
+            if (estabelecimento is not null)
+                _salario = estabelecimento.SalarioMinimoReferencia;
+        }
+    }
+
+    private void Calcular()
+    {
+        var entrada = new CustoFuncionarioEntrada(_salario, _valeTransporte, _valeRefeicao, _outrosBeneficios);
+        _resultado = CalculadoraCustoFuncionario.Calcular(entrada);
+    }
+}
